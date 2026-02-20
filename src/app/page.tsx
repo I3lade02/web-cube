@@ -45,6 +45,17 @@ export default function Page() {
     return `${m.face}${suffix}`;
   }, [solutionMoves, step]);
 
+  const scheme = useMemo(() => {
+    return {
+      U: net.U[4],
+      R: net.R[4],
+      F: net.F[4],
+      D: net.D[4],
+      L: net.L[4],
+      B: net.B[4],
+    };
+  }, [net]);
+
   return (
     <main className="mx-auto max-w-6xl p-6">
       <h1 className="text-2xl font-semibold">Rubik’s Cube Solver (Offline, 3D)</h1>
@@ -179,8 +190,8 @@ export default function Page() {
                 Speed: {msPerMove} ms / move
                 <input
                   type="range"
-                  min={120}
-                  max={1200}
+                  min={1000}
+                  max={4000}
                   step={10}
                   value={msPerMove}
                   onChange={(e) => setMsPerMove(Number(e.target.value))}
@@ -202,12 +213,27 @@ export default function Page() {
               setStep(n);
             }}
           />
-
           <div className="rounded-2xl border border-black/10 p-4 shadow-sm">
             <div className="text-sm font-medium">3D Cube (animated)</div>
-            <div className="mt-3">
-              <CubeViewer3D initialFacelets={facelets} moves={solutionMoves} step={step} msPerMove={msPerMove} />
-            </div>
+
+            {facelets.includes("?") ? (
+              <div className="mt-3 rounded-xl bg-yellow-50 p-3 text-sm text-yellow-900">
+                Set all 6 <b>center stickers</b> to different colors first (index 4 on each face).
+                <div className="mt-1 text-xs text-yellow-900/70">
+                  The 3D preview needs a complete center mapping (no “?” in facelets).
+                </div>
+              </div>
+            ) : (
+              <div className="mt-3">
+                <CubeViewer3D
+                  initialFacelets={facelets}
+                  scheme={scheme}
+                  moves={solutionMoves}
+                  step={step}
+                  msPerMove={msPerMove}
+                />
+              </div>
+            )}
           </div>
         </aside>
       </div>

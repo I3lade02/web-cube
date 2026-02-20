@@ -13,7 +13,7 @@ import {
   buildCubiesFromFacelets,
   cubieInLayer,
   moveAxisLayer,
-  moveToQuarter
+  moveToQuarter,
 } from "@/lib/cube/3d/cubies";
 
 const COLOR_TO_HEX: Record<Color, number> = {
@@ -22,7 +22,7 @@ const COLOR_TO_HEX: Record<Color, number> = {
   R: 0xf44336,
   O: 0xff9800,
   B: 0x1e40af,
-  G: 0x22c55e
+  G: 0x22c55e,
 };
 
 // BoxGeometry material order: +x, -x, +y, -y, +z, -z => R, L, U, D, F, B
@@ -32,7 +32,7 @@ const BOX_FACE_TO_STICKER_FACE: Record<number, Face> = {
   2: "U",
   3: "D",
   4: "F",
-  5: "B"
+  5: "B",
 };
 
 function CubieMesh({ cubie, spacing = 1.06 }: { cubie: Cubie; spacing?: number }) {
@@ -41,7 +41,7 @@ function CubieMesh({ cubie, spacing = 1.06 }: { cubie: Cubie; spacing?: number }
     for (let i = 0; i < 6; i++) {
       const f = BOX_FACE_TO_STICKER_FACE[i];
       const c = cubie.stickers[f];
-      const hex = c ? COLOR_TO_HEX[c] : 0x111111; // internal face
+      const hex = c ? COLOR_TO_HEX[c] : 0x111111;
       materials.push(new THREE.MeshStandardMaterial({ color: hex }));
     }
     return materials;
@@ -52,7 +52,7 @@ function CubieMesh({ cubie, spacing = 1.06 }: { cubie: Cubie; spacing?: number }
     cubie.stickers.L,
     cubie.stickers.R,
     cubie.stickers.F,
-    cubie.stickers.B
+    cubie.stickers.B,
   ]);
 
   return (
@@ -69,16 +69,20 @@ function CubieMesh({ cubie, spacing = 1.06 }: { cubie: Cubie; spacing?: number }
 
 function Scene({
   initialFacelets,
+  scheme,
   moves,
   step,
-  msPerMove = 450
+  msPerMove = 1000,
 }: {
   initialFacelets: string;
+  scheme: Record<Face, Color>;
   moves: Move[];
   step: number;
   msPerMove?: number;
 }) {
-  const [cubies, setCubies] = useState<Cubie[]>(() => buildCubiesFromFacelets(initialFacelets));
+  const [cubies, setCubies] = useState<Cubie[]>(() =>
+    buildCubiesFromFacelets(initialFacelets, scheme)
+  );
 
   const [activeMove, setActiveMove] = useState<{ move: Move; fromStep: number } | null>(null);
   const [progress, setProgress] = useState(0); // 0..1
@@ -86,14 +90,14 @@ function Scene({
 
   const currentStepRef = useRef(0);
 
-  // Rebuild if user repaints
+  // Rebuild if user repaints or scheme changes
   useEffect(() => {
-    setCubies(buildCubiesFromFacelets(initialFacelets));
+    setCubies(buildCubiesFromFacelets(initialFacelets, scheme));
     currentStepRef.current = 0;
     setActiveMove(null);
     setProgress(0);
     pivotRef.current?.rotation.set(0, 0, 0);
-  }, [initialFacelets]);
+  }, [initialFacelets, scheme]);
 
   // Step changes drive animation or snapping
   useEffect(() => {
@@ -105,7 +109,7 @@ function Scene({
 
     // snap if jumping far or backwards
     if (desired < current || desired > current + 1) {
-      const base = buildCubiesFromFacelets(initialFacelets);
+      const base = buildCubiesFromFacelets(initialFacelets, scheme);
       const next = applyMovesToCubies(base, moves.slice(0, desired));
       setCubies(next);
       currentStepRef.current = desired;
@@ -119,7 +123,7 @@ function Scene({
       setProgress(0);
       pivotRef.current?.rotation.set(0, 0, 0);
     }
-  }, [step, moves, initialFacelets, activeMove]);
+  }, [step, moves, initialFacelets, scheme, activeMove]);
 
   useFrame((_, delta) => {
     if (!activeMove) return;
@@ -148,7 +152,9 @@ function Scene({
     }
   });
 
-  const { axis, layer } = activeMove ? moveAxisLayer(activeMove.move.face) : ({ axis: "x" as const, layer: 0 } as any);
+  const { axis, layer } = activeMove
+    ? moveAxisLayer(activeMove.move.face)
+    : ({ axis: "x" as const, layer: 0 } as any);
 
   const layerCubies = activeMove ? cubies.filter((c) => cubieInLayer(c, axis, layer)) : [];
   const restCubies = activeMove ? cubies.filter((c) => !cubieInLayer(c, axis, layer)) : cubies;
@@ -178,11 +184,13 @@ function Scene({
 
 export function CubeViewer3D({
   initialFacelets,
+  scheme,
   moves,
   step,
-  msPerMove
+  msPerMove,
 }: {
   initialFacelets: string;
+  scheme: Record<Face, Color>;
   moves: Move[];
   step: number;
   msPerMove?: number;
@@ -191,7 +199,13 @@ export function CubeViewer3D({
     <div className="rounded-2xl border border-black/10 shadow-sm overflow-hidden">
       <div className="h-105 w-full">
         <Canvas camera={{ position: [4, 4, 6], fov: 45 }} shadows>
-          <Scene initialFacelets={initialFacelets} moves={moves} step={step} msPerMove={msPerMove ?? 450} />
+          <Scene
+            initialFacelets={initialFacelets}
+            scheme={scheme}
+            moves={moves}
+            step={step}
+            msPerMove={msPerMove ?? 450}
+          />
         </Canvas>
       </div>
       <div className="px-4 py-2 text-xs text-black/50">Drag to rotate • Scroll to zoom</div>

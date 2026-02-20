@@ -1,5 +1,4 @@
 import type { Color, Face, Move } from "@/lib/cube/types";
-import { DEFAULT_FACE_COLORS } from "@/lib/cube/constants";
 
 /**
  * Coordinate system:
@@ -55,25 +54,28 @@ function normalToFace(n: { x: number; y: number; z: number }): Face {
   return "B";
 }
 
+/** Rotate a vector by quarter-turns q around axis (RH: +90 when q=+1) */
 function rotateVec(v: Vec3i, axis: Axis, q: 1 | -1 | 2 | -2): Vec3i {
   let { x, y, z } = v;
+
+  // TS: Math.abs widens to number; q is limited so this is safe
   const times = Math.abs(q) as 1 | 2;
   const dir: 1 | -1 = q > 0 ? 1 : -1;
 
   for (let t = 0; t < times; t++) {
     if (axis === "x") {
-      const ny = (dir === 1 ? -z : z) as -1 | 0 | 1;
-      const nz = (dir === 1 ? y : -y) as -1 | 0 | 1;
+      const ny = (dir === 1 ? -z : z) as Vec3i["y"];
+      const nz = (dir === 1 ? y : -y) as Vec3i["z"];
       y = ny;
       z = nz;
     } else if (axis === "y") {
-      const nx = (dir === 1 ? z : -z) as -1 | 0 | 1;
-      const nz = (dir === 1 ? -x : x) as -1 | 0 | 1;
+      const nx = (dir === 1 ? z : -z) as Vec3i["x"];
+      const nz = (dir === 1 ? -x : x) as Vec3i["z"];
       x = nx;
       z = nz;
     } else {
-      const nx = (dir === 1 ? -y : y) as -1 | 0 | 1;
-      const ny = (dir === 1 ? x : -x) as -1 | 0 | 1;
+      const nx = (dir === 1 ? -y : y) as Vec3i["x"];
+      const ny = (dir === 1 ? x : -x) as Vec3i["y"];
       x = nx;
       y = ny;
     }
@@ -82,16 +84,33 @@ function rotateVec(v: Vec3i, axis: Axis, q: 1 | -1 | 2 | -2): Vec3i {
   return { x: clampPos(x), y: clampPos(y), z: clampPos(z) };
 }
 
-function rotateNormal(n: { x: number; y: number; z: number }, axis: Axis, q: 1 | -1 | 2 | -2) {
-  const v = rotateVec({ x: clampPos(n.x), y: clampPos(n.y), z: clampPos(n.z) }, axis, q);
+function rotateNormal(
+  n: { x: number; y: number; z: number },
+  axis: Axis,
+  q: 1 | -1 | 2 | -2
+) {
+  const v = rotateVec(
+    { x: clampPos(n.x), y: clampPos(n.y), z: clampPos(n.z) },
+    axis,
+    q
+  );
   return { x: v.x, y: v.y, z: v.z };
 }
 
-function faceletsLettersToColors(facelets: string): Color[] {
-  if (facelets.length !== 54) throw new Error(`Expected 54 facelets, got ${facelets.length}`);
+/**
+ * Convert a 54-char facelets string (letters U/R/F/D/L/B) into Colors,
+ * using the *current scheme* derived from center stickers.
+ */
+function faceletsLettersToColors(
+  facelets: string,
+  scheme: Record<Face, Color>
+): Color[] {
+  if (facelets.length !== 54)
+    throw new Error(`Expected 54 facelets, got ${facelets.length}`);
+
   return facelets.split("").map((ch) => {
     const f = ch as Face;
-    const c = DEFAULT_FACE_COLORS[f];
+    const c = scheme[f];
     if (!c) throw new Error(`Invalid facelet char: ${ch}`);
     return c;
   });
@@ -99,11 +118,12 @@ function faceletsLettersToColors(facelets: string): Color[] {
 
 /**
  * Map face+pos(0..8) to cubie coordinate (x,y,z).
- * Must align with the same orientation as your facelets/moves.
+ * This orientation matches the move logic.
  */
 function facePosToCoord(face: Face, pos: number): Vec3i {
   const row = Math.floor(pos / 3);
   const col = pos % 3;
+
   const x = clampPos(-1 + col);
   const yTopToBottom = clampPos(1 - row);
 
@@ -111,30 +131,39 @@ function facePosToCoord(face: Face, pos: number): Vec3i {
     case "F":
       return { x, y: yTopToBottom, z: 1 };
     case "B": {
+      // mirrored when looking at back
       const xb = clampPos(1 - col);
       return { x: xb, y: yTopToBottom, z: -1 };
     }
     case "R": {
+      // looking from +x, left->right is z: +1 -> -1
       const z = clampPos(1 - col);
       return { x: 1, y: yTopToBottom, z };
     }
     case "L": {
+      // looking from -x, left->right is z: -1 -> +1
       const z = clampPos(-1 + col);
       return { x: -1, y: yTopToBottom, z };
     }
     case "U": {
+      // looking from +y, top row is back (z=-1)
       const z = clampPos(-1 + row);
       return { x, y: 1, z };
     }
     case "D": {
+      // looking from -y, top row is front (z=+1)
       const z = clampPos(1 - row);
       return { x, y: -1, z };
     }
   }
 }
 
-export function buildCubiesFromFacelets(faceletsLetters: string): Cubie[] {
-  const colors = faceletsLettersToColors(faceletsLetters);
+/** Build 27 cubies from a facelets string + scheme */
+export function buildCubiesFromFacelets(
+  faceletsLetters: string,
+  scheme: Record<Face, Color>
+): Cubie[] {
+  const colors = faceletsLettersToColors(faceletsLetters, scheme);
 
   const map = new Map<string, Cubie>();
   for (const x of [-1, 0, 1] as const) {
@@ -144,13 +173,21 @@ export function buildCubiesFromFacelets(faceletsLetters: string): Cubie[] {
         map.set(key(pos), {
           id: key(pos),
           pos,
-          stickers: { U: null, R: null, F: null, D: null, L: null, B: null }
+          stickers: { U: null, R: null, F: null, D: null, L: null, B: null },
         });
       }
     }
   }
 
-  const faceOffsets: Record<Face, number> = { U: 0, R: 9, F: 18, D: 27, L: 36, B: 45 };
+  // face offsets in URFDLB order
+  const faceOffsets: Record<Face, number> = {
+    U: 0,
+    R: 9,
+    F: 18,
+    D: 27,
+    L: 36,
+    B: 45,
+  };
 
   for (const face of FACES) {
     const off = faceOffsets[face];
@@ -166,6 +203,7 @@ export function buildCubiesFromFacelets(faceletsLetters: string): Cubie[] {
   return Array.from(map.values());
 }
 
+/** Which axis & layer corresponds to a move face */
 export function moveAxisLayer(face: Face): { axis: Axis; layer: -1 | 1 } {
   switch (face) {
     case "R":
@@ -184,10 +222,15 @@ export function moveAxisLayer(face: Face): { axis: Axis; layer: -1 | 1 } {
 }
 
 /**
- * Clockwise as seen from outside the turned face.
- * Maps to RH rotation direction.
+ * Clockwise as seen from outside the face.
+ * Maps to RH rotation direction:
+ * - +axis faces (F,R,U): negative angle
+ * - -axis faces (B,L,D): positive angle
  */
-export function moveToQuarter(face: Face, amount: 1 | 2 | 3): 1 | -1 | 2 | -2 {
+export function moveToQuarter(
+  face: Face,
+  amount: 1 | 2 | 3
+): 1 | -1 | 2 | -2 {
   const q = amount === 1 ? 1 : amount === 2 ? 2 : -1;
   const sign = face === "F" || face === "R" || face === "U" ? -1 : 1;
   return (sign * q) as 1 | -1 | 2 | -2;
@@ -197,6 +240,7 @@ export function cubieInLayer(c: Cubie, axis: Axis, layer: -1 | 1): boolean {
   return c.pos[axis] === layer;
 }
 
+/** Commit a move to cubie positions + sticker orientations (no animation) */
 export function applyMoveToCubies(cubies: Cubie[], move: Move): Cubie[] {
   const { axis, layer } = moveAxisLayer(move.face);
   const q = moveToQuarter(move.face, move.amount);
@@ -206,7 +250,14 @@ export function applyMoveToCubies(cubies: Cubie[], move: Move): Cubie[] {
 
     const newPos = rotateVec(c.pos, axis, q);
 
-    const newStickers: Cubie["stickers"] = { U: null, R: null, F: null, D: null, L: null, B: null };
+    const newStickers: Cubie["stickers"] = {
+      U: null,
+      R: null,
+      F: null,
+      D: null,
+      L: null,
+      B: null,
+    };
 
     for (const sf of FACES) {
       const col = c.stickers[sf];
